@@ -21,25 +21,44 @@ func main() {
 		if checkErr(err) {
 			fmt.Printf("You dun goofed. You probably put in a non-integer value.")
 		} else {
-			// This is so we can time the program. We only want to time the main logic.
+			// This is so we can time the program. We only want to time the
+			// main logic.
 			start := time.Now()
 
-			// This channel will store the results from the individual goroutines,
-			// and will be processed by the scoreboard function
+			// This channel will store the results from the individual
+			// goroutines, and will be processed by the scoreboard function
 			results := make(chan Result, bufferSize)
+
+			// This channel will increment with each value of n. This way,
+			// we can dynamically spin up goroutines whenever they are
+			// available to handle the next value of n, and we should be
+			// able to achieve 100% processor usage.
+			valueN := make(chan uint64)
+
+			valueN <- max
 
 			// This Result is going to store our highest score
 			var overallHighScore Result
 
-			// This is where we need to start our goroutines
-			go threaded(1, max/4, results)
-			go threaded(max/4, max/2, results)
-			go threaded(max/2, (max/4)*3, results)
-			go threaded((max/4)*3, max, results)
-			for true {
-				scoreboard(results, overallHighScore)
-				fmt.Printf("The buffer is currently %d / %d full", len(results), bufferSize)
-			}
+			// This is going to hold our next value of n so that we can avoid initializing it over and over again every time we spin up a new goroutine
+			var nextValue uint64
+			nextValue = iterateN(valueN)
+			threaded(nextValue, results)
+			go func() {
+				for true {
+					nextValue = iterateN(valueN)
+					go threaded(nextValue, results)
+					fmt.Printf("The buffer is currently %d / %d full", len(results), bufferSize)
+				}
+			}()
+
+			// This is so that we can constantly update the overall high score, since we need to keep it running.
+			go func() {
+				for true {
+					overallHighScore = scoreboard(results, overallHighScore)
+				}
+			}()
+
 			trackTime("The Collatz portion", start)
 			fmt.Printf("%d has takes the most steps at %d.\n", overallHighScore.highestValue, overallHighScore.highestScore)
 		} // End of main program logic
@@ -54,8 +73,10 @@ type Result struct {
 }
 
 // Classic 3n+1 conjecture.
-func collatz(num uint64) uint {
+func collatz(num uint64) Result {
 	var count uint
+	var result Result
+	result.highestValue = num
 	for num > 1 {
 		if num%2 == 0 {
 			num /= 2
@@ -64,35 +85,37 @@ func collatz(num uint64) uint {
 		}
 		count++
 	}
-	return count
+	result.highestScore = count
+	return result
 }
 
-// This function will handle the main logic of theprogram. It will call the collatz function for a range of integers
-// It will keep a local copy of the highest score and the corresponding integer. WHenever it updates this number, it will
-// push that number off to the results channel
-func threaded(start uint64, end uint64, results chan Result) {
-	// This is where we figure out which one took the most steps.
-	var score uint
-	var value uint64
-	var highScore Result
+// This function takes a value, and then runs thecollatz function on it.
+// Then it sticks the result of that function into the channel that holds
+// our results
+func threaded(value uint64, results chan Result) {
 
-	for value = start; value < end; value++ {
-		score = collatz(value)
-		if score > highScore.highestScore {
-			highScore.highestScore = score
-			highScore.highestValue = value
-			results <- highScore
-		}
-	}
+	var result = collatz(value)
+
+	results <- result
 }
 
-// This function keeps track of the actual highest score, and then reports it as it is updated.
-func scoreboard(results chan Result, highScore Result) {
-	var nextScore = <-results
+// This function keeps track of the actual highest score, and then reports
+// it as it is updated.
+func scoreboard(results chan Result, highScore Result) Result {
+	nextScore := <-results
 	if nextScore.highestScore > highScore.highestScore {
 		highScore = nextScore
 		fmt.Printf("%d currently takes the most steps at %d\n\n", highScore.highestValue, highScore.highestScore)
 	}
+	return highScore
+}
+
+// This function returns the current value of the channel, and increments
+// it and updates the channel with thenew value
+func iterateN(valueN chan uint64) uint64 {
+	currentN := <-valueN
+	valueN <- currentN + 1
+	return currentN
 }
 
 // This function tracks time. Yay!
@@ -100,7 +123,8 @@ func trackTime(name string, start time.Time) {
 	fmt.Printf("%s took %s to execute.\n", name, time.Since(start))
 }
 
-// Simply returns false if there is no error, and true if there is one. Technically, this is error handling!
+// Simply returns false if there is no error, and true if there is one.
+// Technically, this is error handling!
 func checkErr(err error) bool {
 	if err != nil {
 		log.Println(err)
