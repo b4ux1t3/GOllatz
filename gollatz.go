@@ -35,29 +35,16 @@ func main() {
 			// able to achieve 100% processor usage.
 			valueN := make(chan uint64)
 
-			valueN <- max
-
 			// This Result is going to store our highest score
 			var overallHighScore Result
 
-			// This is going to hold our next value of n so that we can avoid initializing it over and over again every time we spin up a new goroutine
-			var nextValue uint64
-			nextValue = iterateN(valueN)
-			threaded(nextValue, results)
-			go func() {
-				for true {
-					nextValue = iterateN(valueN)
-					go threaded(nextValue, results)
-					fmt.Printf("The buffer is currently %d / %d full", len(results), bufferSize)
-				}
-			}()
+			// Get it?
+			go infinite(max, valueN, results)
 
 			// This is so that we can constantly update the overall high score, since we need to keep it running.
-			go func() {
-				for true {
-					overallHighScore = scoreboard(results, overallHighScore)
-				}
-			}()
+			for {
+				overallHighScore = scoreboard(results, overallHighScore)
+			}
 
 			trackTime("The Collatz portion", start)
 			fmt.Printf("%d has takes the most steps at %d.\n", overallHighScore.highestValue, overallHighScore.highestScore)
@@ -70,6 +57,19 @@ func main() {
 type Result struct {
 	highestScore uint
 	highestValue uint64
+}
+
+// Infinitely make new goroutines
+func infinite(max uint64, valueN chan uint64, results chan Result) {
+	fmt.Printf("Starting goroutines. . .")
+	valueN <- max
+	// This is going to hold our next value of n so that we can avoid initializing it over and over again every time we spin up a new goroutine
+	var nextValue uint64
+	for {
+		nextValue = iterateN(valueN)
+		fmt.Printf("Starting goroutine for value %d\n\n", nextValue)
+		go threaded(nextValue, results)
+	}
 }
 
 // Classic 3n+1 conjecture.
