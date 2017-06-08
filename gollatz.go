@@ -28,29 +28,30 @@ func main() {
 			// and will be processed by the scoreboard function
 			results := make(chan Result, bufferSize)
 
+			// This channel will generate work for our threads
+			work := make(chan uint64, max)
+
 			// This Result is going to store our highest score
 			var overallHighScore Result
 
 			// This is where we need to start our goroutines
-			go threaded(1, max/4, results)
-			go threaded(max/4, max/2, results)
-			go threaded(max/2, (max/4)*3, results)
-			go threaded((max/4)*3, max, results)
-			for true {
-				scoreboard(results, overallHighScore)
-				fmt.Printf("The buffer is currently %d / %d full", len(results), bufferSize)
-			}
+			go threaded(work, results)
+			// go threaded(work, results)
+			// go threaded(work, results)
+			// go threaded(work, results)
+			go scoreboard(results, overallHighScore)
 			trackTime("The Collatz portion", start)
-			fmt.Printf("%d has takes the most steps at %d.\n", overallHighScore.highestValue, overallHighScore.highestScore)
+
+			fmt.Printf("%d takes the most steps at %d.\n", overallHighScore.Value, overallHighScore.Score)
 		} // End of main program logic
 
 	} // End of program
 }
 
-// Result will store the highest scores and its corresponding value of n
+// Result will store the scores and its corresponding value of n
 type Result struct {
-	highestScore uint
-	highestValue uint64
+	Score uint
+	Value uint64
 }
 
 // Classic 3n+1 conjecture.
@@ -67,31 +68,29 @@ func collatz(num uint64) uint {
 	return count
 }
 
-// This function will handle the main logic of theprogram. It will call the collatz function for a range of integers
-// It will keep a local copy of the highest score and the corresponding integer. WHenever it updates this number, it will
-// push that number off to the results channel
-func threaded(start uint64, end uint64, results chan Result) {
+// This function will handle the main logic of the program. It will take the next value out of
+// the input channel, and calculate collatz from that.
+func threaded(in <-chan uint64, results chan<- Result) {
 	// This is where we figure out which one took the most steps.
-	var score uint
-	var value uint64
-	var highScore Result
+	value := <-in
+	var result Result
 
-	for value = start; value < end; value++ {
-		score = collatz(value)
-		if score > highScore.highestScore {
-			highScore.highestScore = score
-			highScore.highestValue = value
-			results <- highScore
-		}
-	}
+	result.Score = collatz(value)
+	result.Value = value
+
+	results <- result
+
+	fmt.Printf("%d, % d", result.Score, result.Value)
+
+	close(results)
 }
 
 // This function keeps track of the actual highest score, and then reports it as it is updated.
-func scoreboard(results chan Result, highScore Result) {
+func scoreboard(results <-chan Result, highScore Result) {
 	var nextScore = <-results
-	if nextScore.highestScore > highScore.highestScore {
+	if nextScore.Score > highScore.Score {
 		highScore = nextScore
-		fmt.Printf("%d currently takes the most steps at %d\n\n", highScore.highestValue, highScore.highestScore)
+		fmt.Printf("%d currently takes the most steps at %d\n\n", highScore.Value, highScore.Score)
 	}
 }
 
